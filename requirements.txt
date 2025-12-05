@@ -1,0 +1,15 @@
+streamlit
+requests
+pdfplumber
+PyPDF2
+chromadb
+langchain
+pytest
+python-dotenv
+pydantic
+scikit-learn
+python-docx
+reportlab
+langchain_community
+jinja2
+premailer
