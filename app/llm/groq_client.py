@@ -1,7 +1,3 @@
-# from langchain.chat_models import ChatOpenAI
-from langchain_community.chat_models import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
-
 import os
 from dotenv import load_dotenv
 # Explicitly load .env from project root before any os.getenv calls
@@ -11,6 +7,24 @@ import time
 import logging
 from typing import Any, Dict, Optional
 
+# Optional LangChain imports: perform lazy import and set flag so the module
+# can be imported even if LangChain isn't installed in the runtime (e.g., on
+# Streamlit Cloud when you rely on the direct HTTP `call_groq_chat` function).
+LANGCHAIN_AVAILABLE = False
+try:
+    # Importing these at module import time causes ModuleNotFoundError when
+    # langchain is not installed. We'll import lazily inside the function that
+    # needs them instead. Keep the names here for type-checking/runtime use.
+    from langchain_community.chat_models import ChatOpenAI  # type: ignore
+    from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate  # type: ignore
+    LANGCHAIN_AVAILABLE = True
+except Exception:
+    # LangChain not available; fall back to HTTP-based implementation below.
+    LANGCHAIN_AVAILABLE = False
+    ChatOpenAI = None  # type: ignore
+    ChatPromptTemplate = None  # type: ignore
+    SystemMessagePromptTemplate = None  # type: ignore
+    HumanMessagePromptTemplate = None  # type: ignore
 import requests
 
 logger = logging.getLogger(__name__)
@@ -54,6 +68,12 @@ def call_groq_chat_langchain(
     """
     if not GROQ_API_KEY:
         raise EnvironmentError("GROQ_API_KEY not set in environment.")
+
+    if not LANGCHAIN_AVAILABLE:
+        raise EnvironmentError(
+            "LangChain (and/or langchain_community) is not installed in this environment. "
+            "Install it (e.g. `pip install langchain langchain_community`) or use the HTTP-based `call_groq_chat` instead."
+        )
 
     # Langchain OpenAI-compatible chat model for Groq
     llm = ChatOpenAI(
