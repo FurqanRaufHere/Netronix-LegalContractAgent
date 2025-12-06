@@ -5,6 +5,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dir
 import json
 import time
 import logging
+import random
 from typing import Any, Dict, Optional
 
 # Optional LangChain imports: perform lazy import and set flag so the module
@@ -36,8 +37,13 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 DEFAULT_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")  # override if needed
 DEFAULT_TIMEOUT = 20  # seconds
-MAX_RETRIES = 2
-RETRY_DELAY = 1.0  # seconds
+# Make retry/backoff configurable by env so deployed hosts can increase limits
+GROQ_MAX_RETRIES = int(os.getenv("GROQ_MAX_RETRIES", "3"))
+GROQ_RETRY_BASE_DELAY = float(os.getenv("GROQ_RETRY_BASE_DELAY", "1.0"))
+# Optional throttle (ms) between requests to avoid bursts in deployed environments
+GROQ_THROTTLE_DELAY_MS = int(os.getenv("GROQ_THROTTLE_DELAY_MS", "0"))
+# When enabled, include more LLM error details in logs/traces (dev only). Do NOT enable in public logs with secrets.
+DEBUG_LLM_ERRORS = str(os.getenv("DEBUG_LLM_ERRORS", "false")).lower() in ("1", "true", "yes")
 
 
 SYSTEM_PROMPT = "You are a contract risk assistant — reply in valid JSON only."
@@ -170,7 +176,7 @@ def call_groq_chat(
     temperature: float = 0.0,
     max_tokens: int = 512,
     timeout: int = DEFAULT_TIMEOUT,
-    max_retries: int = MAX_RETRIES,
+    max_retries: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Call the GROQ / OpenAI-compatible chat completions endpoint.
@@ -196,12 +202,44 @@ def call_groq_chat(
         "max_tokens": max_tokens,
     }
 
+    # choose effective max retries
+    if max_retries is None:
+        max_retries = GROQ_MAX_RETRIES
+
     last_exc = None
-    for attempt in range(1, max_retries + 2):  # +1 for first attempt
+    last_status = None
+    for attempt in range(1, max_retries + 1):
+        # optional throttle to reduce bursts (deployed envs can set GROQ_THROTTLE_DELAY_MS)
+        if GROQ_THROTTLE_DELAY_MS and attempt > 1:
+            time.sleep(GROQ_THROTTLE_DELAY_MS / 1000.0)
+
         try:
             resp = requests.post(GROQ_CHAT_URL, headers=headers, json=payload, timeout=timeout)
+            last_status = getattr(resp, "status_code", None)
             # raise for HTTP errors
-            resp.raise_for_status()
+            try:
+                resp.raise_for_status()
+            except requests.HTTPError as http_err:
+                # capture body for debugging (truncate)
+                body = ""
+                try:
+                    body = resp.text[:1000]
+                except Exception:
+                    body = "<unavailable>"
+                logger.warning(
+                    "GROQ HTTP error attempt %d/%d status=%s body=%s",
+                    attempt,
+                    max_retries,
+                    last_status,
+                    body if not DEBUG_LLM_ERRORS else body,
+                )
+                # treat 429 and 5xx as transient and retryable; others may be permanent
+                if last_status and (last_status == 429 or 500 <= last_status < 600):
+                    raise
+                else:
+                    # non-retryable HTTP error, raise immediately
+                    raise
+
             j = resp.json()
             # Typical OpenAI-compatible response: choices[0].message.content
             content = None
@@ -233,11 +271,24 @@ def call_groq_chat(
             # Return parsed; schema validation can be done by caller
             return parsed
         except Exception as e:
-            # Catch any exception including network errors and treat as retryable network/request error.
             last_exc = e
-            logger.warning("Network/request error on GROQ attempt %d/%d: %s", attempt, max_retries + 1, str(e))
-        # Backoff before retrying
-        if attempt <= max_retries:
-            time.sleep(RETRY_DELAY * attempt)
+            # log the exception succinctly
+            logger.warning("GROQ request attempt %d/%d failed: %s", attempt, max_retries, str(e))
+            # backoff with exponential delay + small jitter
+            if attempt < max_retries:
+                delay = GROQ_RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                # keep jitter small relative to delay
+                jitter = random.uniform(0, min(0.1, delay * 0.1))
+                sleep_for = delay + jitter
+                logger.debug("Retrying after %.2fs (attempt %d/%d)", sleep_for, attempt, max_retries)
+                time.sleep(sleep_for)
+            continue
+
     # If we get here, all attempts failed
-    raise RuntimeError(f"GROQ call failed after {max_retries+1} attempts. Last error: {last_exc}")
+    # Build informative message but avoid including secrets
+    msg = f"GROQ call failed after {max_retries} attempts."
+    if last_status:
+        msg += f" Last HTTP status: {last_status}."
+    if last_exc:
+        msg += f" Last exception: {str(last_exc)[:1000]}"
+    raise RuntimeError(msg)
