@@ -1,5 +1,3 @@
-git clone <repo-url>
-
 # Contract Risk Analyzer 🚀
 
 [![Streamlit](https://img.shields.io/badge/Streamlit-UI-red?logo=streamlit)](https://streamlit.io/) [![LangChain](https://img.shields.io/badge/LangChain-LLM-blue?logo=python)](https://github.com/langchain-ai/langchain) [![LangGraph](https://img.shields.io/badge/LangGraph-Agents-green)](https://github.com/langchain-ai/langgraph) [![ChromaDB](https://img.shields.io/badge/ChromaDB-VectorDB-purple)](https://www.trychroma.com/) [![LangSmith](https://img.shields.io/badge/LangSmith-Observability-yellow)](https://smith.langchain.com/)
