@@ -10,6 +10,6 @@ pydantic
 scikit-learn
 python-docx
 reportlab
-langchain_community
+langchain-community
 jinja2
 premailer
