@@ -55,111 +55,76 @@ streamlit run streamlit_app.py
 
 Open the local URL in your browser. Upload a contract, analyze, and review results.
 
----
+# Netronix-LegalContractAgent
 
-## 🗂️ Project Structure
+This repository contains a Streamlit-based contract analysis assistant that extracts text from uploaded documents, analyzes clauses for risk using a GROQ LLM backend, and can send results by email (Resend primary, SMTP fallback).
 
-```
-project/
-├── app/
-│   ├── analyzer/           # Clause analysis, LangGraph workflow
-│   ├── llm/                # LLM wrappers (Groq, LangChain)
-│   ├── utils/              # Clause splitting, text extraction
-│   └── comm/               # Email (Resend)
-├── chroma_db/              # Chroma vector DB files
-├── data/                   # Example data, test docs
-├── logs/                   # LLM/agent traces (JSONL)
-├── streamlit_app.py        # Main Streamlit UI
-├── requirements.txt
-├── .env
-└── README.md
-```
+This README explains how to run the app locally, configure environment variables, and troubleshoot common deployed-only problems (LLM rate limits, email provider onboarding). It also documents the project structure and testing commands.
 
----
+**Quick Links**
+- **Code:** `streamlit_app.py` (app entry)
+- **LLM client:** `app/llm/groq_client.py`
+- **Email helpers:** `app/comm/email.py` and `app/comm/templates/`
+- **Text extraction:** `app/utils/text_extract.py`
+- **Analyzer:** `app/analyzer/analyze_document.py`
 
-## 🛠️ Key Technologies
-
-- **Streamlit**: UI for contract upload, review, and email
-- **LangChain**: LLM calls, prompt management
-- **LangGraph**: Agent workflow orchestration
-- **ChromaDB**: Vector search for precedents
-- **Resend**: Email delivery
-- **LangSmith**: Observability/tracing for LLM/agent runs
+**Supported Features**
+- **Document extraction:** PDF / DOCX / plain text extraction
+- **Clause analysis:** risk scoring, reasons, and redline suggestions via GROQ LLM
+- **Email delivery:** Resend API + SMTP fallback (Mailtrap/Gmail app passwords)
+- **HTML email templates:** Jinja2 + Premailer in `app/comm/templates`
 
 ---
 
-## 🧩 Extending the Platform
+**Prerequisites**
+- Python 3.11+ recommended (project uses a venv in `capstone/` for local development).
+- Install dependencies:
 
-- Add new tools/APIs by creating new agent nodes (see `app/analyzer/clause_analysis_graph.py`).
-- Integrate with Twilio, weather APIs, IoT, or MCP by adding new functions and wiring them into the LangGraph workflow.
-- Use LangSmith dashboard to monitor, debug, and optimize your LLM/agent runs.
-- Add more UI pages or dashboards in Streamlit for analytics, admin, or user feedback.
+```powershell
+pip install -r requirements.txt
+```
 
 ---
 
-## 🧪 Testing
+**Environment (.env)**
+Copy `.env.example` to `.env` and fill in real secrets for local development. Key variables used by the app:
 
-```bash
-pytest
+- **GROQ / LLM**
+	- `GROQ_API_KEY`: your Groq/OpenAI-compatible API key
+	- `GROQ_BASE_URL`: (optional) base URL for Groq API
+	- `GROQ_MODEL`: model name used for analysis
+	- `GROQ_MAX_RETRIES`, `GROQ_RETRY_BASE_DELAY`: retry/backoff tuning for deployed hosts
+	- `GROQ_THROTTLE_DELAY_MS`: optional per-request throttle to avoid burst rate limits
+	- `DEBUG_LLM_ERRORS`: set `true` in dev to surface extra LLM error info (do NOT enable in public logs)
+
+- **Email (Resend + SMTP fallback)**
+	- `EMAIL_BACKEND`: `resend` (default) or `smtp` to force SMTP
+	- `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_OWNER_EMAIL`
+	- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM_EMAIL` (for Mailtrap/Gmail)
+
+- **LangChain (optional)**
+	- `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY`, `LANGCHAIN_ENDPOINT`
+
+- **Other**
+	- `LOG_DIR`: defaults to `logs`
+
+See `.env.example` for annotated placeholders.
+
+---
+
+**Run locally (development)**
+
+1. Create `.env` from `.env.example` and set keys.
+2. Install dependencies: `pip install -r requirements.txt`
+3. Launch Streamlit:
+
+```powershell
+streamlit run streamlit_app.py
 ```
 
-## Resend testing mode (onboarding)
-
-If you don't have a verified sending domain yet, Resend supports a simple onboarding/testing mode:
-
-- Sender: `onboarding@resend.dev` (must be exactly this address)
-- Recipient: the recipient must be the account owner's email (the email you used to sign up for Resend)
-
-To use the onboarding sender in this project, set these env vars in `.env`:
-
-```env
-RESEND_API_KEY=your_resend_api_key
-RESEND_FROM_EMAIL=onboarding@resend.dev
-RESEND_OWNER_EMAIL=you@yourdomain.com   # the email you used to sign up with Resend
-```
-
-The app performs an explicit check and will refuse to send if the recipient does not match `RESEND_OWNER_EMAIL` when using the onboarding sender. For production, verify a sending domain in Resend and set `RESEND_FROM_EMAIL` to an address from that domain.
-
-## SMTP fallback (Mailtrap / Gmail SMTP)
-
-This project includes an SMTP fallback that will be used automatically if Resend returns verification/403 errors (useful for demos).
-
-Environment variables for SMTP fallback (set these in `.env`):
-
-```env
-SMTP_HOST=smtp.mailtrap.io
-SMTP_PORT=465
-SMTP_USER=your_smtp_user
-SMTP_PASS=your_smtp_password
-```
+Open `http://localhost:8501` in your browser.
 
 Notes:
-- For Mailtrap, use the credentials provided by your Mailtrap inbox.
-- For Gmail, create an App Password and use `smtp.gmail.com` and port `465`; set `SMTP_USER` to your Gmail address and `SMTP_PASS` to the app password.
-- If SMTP variables are not set and Resend fails due to verification, the app will raise an error and show the failure in the UI.
+- If you do not have a verified sending domain in Resend, you will get a 403 when sending from unverified domains (for example `@gmail.com`). Use `RESEND_OWNER_EMAIL` to enable onboarding mode or configure SMTP fallback (Mailtrap) for demos.
 
----
 
-## 🆘 Troubleshooting
-
-- **ModuleNotFoundError**: Make sure all dependencies in `requirements.txt` are installed and your virtual environment is activated.
-- **API Key Errors**: Double-check your `.env` file for correct keys and restart the app after changes.
-- **ChromaDB Warnings**: If you see migration warnings, update your ChromaDB client as shown in the code.
-- **LangSmith Tracing**: Ensure your API key is set and check https://smith.langchain.com for traces.
-
----
-
-## 👤 Authors
-
-- Your Name (and contributors)
-
----
-
-## 🙏 Acknowledgements
-
-- [LangChain](https://github.com/langchain-ai/langchain)
-- [LangGraph](https://github.com/langchain-ai/langgraph)
-- [Streamlit](https://streamlit.io/)
-- [ChromaDB](https://www.trychroma.com/)
-- [Resend](https://resend.com/)
-- [LangSmith](https://smith.langchain.com/)
