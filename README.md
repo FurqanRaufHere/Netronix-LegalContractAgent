@@ -19,7 +19,7 @@
 ---
 
 
-## 🏁 Quickstart
+## Quickstart
 
 ### 1. Clone & Install
 
