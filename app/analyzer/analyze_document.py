@@ -1,4 +1,3 @@
-# app/analyzer/analyze_document.py
 import os
 import json
 import time
