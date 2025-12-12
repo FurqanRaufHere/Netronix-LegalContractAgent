@@ -1,6 +1,5 @@
 import os
 from dotenv import load_dotenv
-# Explicitly load .env from project root before any os.getenv calls
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"))
 import json
 import time
